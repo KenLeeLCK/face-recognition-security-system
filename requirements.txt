@@ -1,0 +1,8 @@
+numpy<2
+Pillow
+torch
+torchvision
+facenet-pytorch
+fastapi
+uvicorn
+python-multipart
