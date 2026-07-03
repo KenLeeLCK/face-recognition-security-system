@@ -1,5 +1,6 @@
 numpy<2
 Pillow
+matplotlib
 torch
 torchvision
 facenet-pytorch
