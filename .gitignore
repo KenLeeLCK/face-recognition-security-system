@@ -1,0 +1,60 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.env/
+.venv/
+CV/
+env/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Dataset and private data
+dataset/
+datasets/
+data/
+lfw/
+olivetti/
+images/
+test_images/
+uploads/
+
+# Face database / embeddings
+*.npz
+*.npy
+*.pkl
+*.pickle
+
+# Model weights
+*.pt
+*.pth
+*.onnx
+*.h5
+
+# Logs and outputs
+logs/
+*.log
+
+# Large result files
+outputs/
+checkpoints/
+
+# Environment secrets
+.env
+*.key
+*.pem
+
+node_modules/
+facerecg_react/node_modules/
+dist/
+build/
+.env
