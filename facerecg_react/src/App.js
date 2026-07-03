@@ -1,9 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import Webcam from 'react-webcam';
 import './App.css';
 
-const API_URL = 'http://127.0.0.1:8000';
+const DEFAULT_API_URL = `${window.location.protocol}//${window.location.hostname || '127.0.0.1'}:8000`;
+const API_URL = (process.env.REACT_APP_API_URL || DEFAULT_API_URL).replace(/\/+$/, '');
+const SERVER_PATH_HELP = 'Use a path that exists on the backend machine, for example ./dataset/train or C:\\Users\\name\\dataset\\train.';
+const DATABASE_PATH_HELP = 'Use a backend-side database path, for example face_database.npz or C:\\Users\\name\\face_database.npz.';
 
 function App() {
   const [activeTab, setActiveTab] = useState('recognize');
@@ -16,6 +19,11 @@ function App() {
   const [datasetDir, setDatasetDir] = useState('./dataset/train');
   const [outputPath, setOutputPath] = useState('face_database.npz');
   const [threshold, setThreshold] = useState('0.75');
+  const [identitySearch, setIdentitySearch] = useState('');
+  const [identities, setIdentities] = useState([]);
+  const [selectedIdentity, setSelectedIdentity] = useState('');
+  const [identityMessage, setIdentityMessage] = useState('');
+  const [isIdentityLoading, setIsIdentityLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [health, setHealth] = useState(null);
   const [metrics, setMetrics] = useState(null);
@@ -41,7 +49,7 @@ function App() {
     } catch (error) {
       setHealth({
         status: 'error',
-        message: 'Backend is not running. Start it with: python -m uvicorn face_api:app --host 0.0.0.0 --port 8000',
+        message: `Backend is not reachable at ${API_URL}. Start it with: python -m uvicorn face_api:app --host 127.0.0.1 --port 8000`,
       });
     }
   };
@@ -56,6 +64,37 @@ function App() {
       setMetrics(null);
     }
   };
+
+  const fetchIdentities = useCallback(async (query = identitySearch) => {
+    setIsIdentityLoading(true);
+    setIdentityMessage('');
+
+    try {
+      const response = await axios.get(`${API_URL}/identities`, {
+        params: {
+          database: databasePath,
+          query,
+        },
+      });
+      setIdentities(response.data.identities || []);
+      setSelectedIdentity((current) => {
+        const stillExists = response.data.identities?.some((identity) => identity.name === current);
+        return stillExists ? current : '';
+      });
+    } catch (error) {
+      setIdentities([]);
+      setSelectedIdentity('');
+      setIdentityMessage(error.response?.data?.detail || 'Failed to load identities');
+    } finally {
+      setIsIdentityLoading(false);
+    }
+  }, [databasePath, identitySearch]);
+
+  useEffect(() => {
+    if (activeTab === 'remove') {
+      fetchIdentities();
+    }
+  }, [activeTab, fetchIdentities]);
 
   const updatePreview = (file, currentUrl, setter) => {
     if (currentUrl) {
@@ -181,6 +220,36 @@ function App() {
     }
   };
 
+  const handleRemoveIdentity = async () => {
+    if (!selectedIdentity) {
+      alert('Please select an identity to remove');
+      return;
+    }
+
+    const confirmed = window.confirm(`Remove identity "${selectedIdentity}" from ${databasePath}?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setIsIdentityLoading(true);
+    setIdentityMessage('');
+
+    try {
+      const response = await axios.post(`${API_URL}/remove_identity`, {
+        name: selectedIdentity,
+        database: databasePath,
+      });
+      setIdentityMessage(`${response.data.message}: ${response.data.name}`);
+      setSelectedIdentity('');
+      await fetchMetrics(databasePath);
+      await fetchIdentities(identitySearch);
+    } catch (error) {
+      setIdentityMessage(error.response?.data?.detail || 'Identity removal failed');
+    } finally {
+      setIsIdentityLoading(false);
+    }
+  };
+
   return (
     <div className="App">
       <header className="App-header">
@@ -202,6 +271,9 @@ function App() {
         <button className={activeTab === 'register' ? 'active' : ''} onClick={() => setActiveTab('register')}>
           Register Face
         </button>
+        <button className={activeTab === 'remove' ? 'active' : ''} onClick={() => setActiveTab('remove')}>
+          Remove Identity
+        </button>
         <button className={activeTab === 'build' ? 'active' : ''} onClick={() => setActiveTab('build')}>
           Build Database
         </button>
@@ -215,6 +287,8 @@ function App() {
               id="databasePath"
               type="text"
               className="text-input"
+              title={DATABASE_PATH_HELP}
+              placeholder="face_database.npz"
               value={databasePath}
               onChange={(e) => setDatabasePath(e.target.value)}
             />
@@ -306,6 +380,8 @@ function App() {
               id="registerDatasetDir"
               type="text"
               className="text-input"
+              title={SERVER_PATH_HELP}
+              placeholder="./dataset/train"
               value={datasetDir}
               onChange={(e) => setDatasetDir(e.target.value)}
             />
@@ -315,6 +391,8 @@ function App() {
               id="registerOutputPath"
               type="text"
               className="text-input"
+              title={DATABASE_PATH_HELP}
+              placeholder="face_database.npz"
               value={outputPath}
               onChange={(e) => setOutputPath(e.target.value)}
             />
@@ -335,6 +413,78 @@ function App() {
           </div>
         )}
 
+        {activeTab === 'remove' && (
+          <div className="remove-tab">
+            <h3>Remove an identity</h3>
+
+            <label className="field-label" htmlFor="removeDatabasePath">Database path</label>
+            <input
+              id="removeDatabasePath"
+              type="text"
+              className="text-input"
+              title={DATABASE_PATH_HELP}
+              placeholder="face_database.npz"
+              value={databasePath}
+              onChange={(e) => setDatabasePath(e.target.value)}
+            />
+
+            <label className="field-label" htmlFor="identitySearch">Search identity</label>
+            <div className="search-row">
+              <input
+                id="identitySearch"
+                type="search"
+                className="text-input"
+                value={identitySearch}
+                placeholder="Type a name to filter identities"
+                onChange={(e) => setIdentitySearch(e.target.value)}
+              />
+              <button type="button" onClick={() => fetchIdentities()} disabled={isIdentityLoading}>
+                {isIdentityLoading ? 'Loading...' : 'Refresh'}
+              </button>
+            </div>
+
+            {identityMessage && (
+              <p className={identityMessage.includes('successfully') ? 'ok-text message-text' : 'error-text message-text'}>
+                {identityMessage}
+              </p>
+            )}
+
+            <div className="identity-list">
+              {identities.length > 0 ? (
+                identities.map((identity) => (
+                  <button
+                    key={identity.name}
+                    type="button"
+                    className={`identity-row ${selectedIdentity === identity.name ? 'selected' : ''}`}
+                    onClick={() => setSelectedIdentity(identity.name)}
+                  >
+                    <span className="identity-name">{identity.name}</span>
+                    <span className="identity-count">{identity.num_templates} templates</span>
+                  </button>
+                ))
+              ) : (
+                <p className="empty-state">
+                  {isIdentityLoading ? 'Loading identities...' : 'No identities found'}
+                </p>
+              )}
+            </div>
+
+            <div className="remove-summary">
+              <span>
+                Selected: <strong>{selectedIdentity || 'None'}</strong>
+              </span>
+              <button
+                type="button"
+                className="danger-btn"
+                onClick={handleRemoveIdentity}
+                disabled={isIdentityLoading || !selectedIdentity}
+              >
+                {isIdentityLoading ? 'Removing...' : 'Remove Identity'}
+              </button>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'build' && (
           <div className="register-tab">
             <h3>Build a database from the server dataset</h3>
@@ -344,6 +494,8 @@ function App() {
               id="datasetDir"
               type="text"
               className="text-input"
+              title={SERVER_PATH_HELP}
+              placeholder="./dataset/train"
               value={datasetDir}
               onChange={(e) => setDatasetDir(e.target.value)}
             />
@@ -353,6 +505,8 @@ function App() {
               id="outputPath"
               type="text"
               className="text-input"
+              title={DATABASE_PATH_HELP}
+              placeholder="face_database.npz"
               value={outputPath}
               onChange={(e) => setOutputPath(e.target.value)}
             />
